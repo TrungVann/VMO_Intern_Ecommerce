@@ -2,11 +2,12 @@
 import { useMutation } from "@tanstack/react-query";
 import { Eye, EyeOff } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import React, { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import axios, { AxiosError } from "axios";
 import { countries } from "apps/seller-ui/src/utils/countries";
+import CreateShop from "apps/seller-ui/src/shared/modules/auth/create-shop";
+import StripeLogo from "apps/seller-ui/src/assets/svgs/stripe-logo";
 
 const RegisterPage = () => {
   const [activeStep, setActiveStep] = useState(1);
@@ -15,10 +16,9 @@ const RegisterPage = () => {
   const [timer, setTimer] = useState(60);
   const [otp, setOtp] = useState(["", "", "", ""]);
   const [showOtp, setShowOtp] = useState(false);
-  const [userData, setUserData] = useState<FormData | null>(null);
+  const [sellerData, setSellerData] = useState<FormData | null>(null);
+  const [sellerId, setSellerId] = useState("");
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
-
-  const router = useRouter();
 
   const {
     register,
@@ -42,13 +42,13 @@ const RegisterPage = () => {
   const registerMutation = useMutation({
     mutationFn: async (data: FormData) => {
       const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_SERVER_URI}/api/user-registration`,
+        `${process.env.NEXT_PUBLIC_SERVER_URI}/api/seller-registration`,
         data
       );
       return response.data;
     },
     onSuccess: (_, formData) => {
-      setUserData(formData);
+      setSellerData(formData);
       setShowOtp(true);
       setCanResend(false);
       setTimer(60);
@@ -58,18 +58,19 @@ const RegisterPage = () => {
 
   const verifyOtpMutation = useMutation({
     mutationFn: async () => {
-      if (!userData) return;
+      if (!sellerData) return;
       const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_SERVER_URI}/api/verify-user`,
+        `${process.env.NEXT_PUBLIC_SERVER_URI}/api/verify-seller`,
         {
-          ...userData,
+          ...sellerData,
           otp: otp.join(""),
         }
       );
       return response.data;
     },
-    onSuccess: () => {
-      router.push("/login");
+    onSuccess: (data) => {
+      setSellerId(data?.seller?.id);
+      setActiveStep(2);
     },
   });
 
@@ -87,7 +88,7 @@ const RegisterPage = () => {
     setOtp(newOtp);
 
     if (value && index < inputRefs.current.length - 1) {
-      inputRefs.current[index + 1]?.focus;
+      inputRefs.current[index + 1]?.focus();
     }
   };
 
@@ -101,8 +102,23 @@ const RegisterPage = () => {
   };
 
   const resendOtp = () => {
-    if (userData) {
-      registerMutation.mutate(userData);
+    if (sellerData) {
+      registerMutation.mutate(sellerData);
+    }
+  };
+
+  const connectStripe = async () => {
+    try {
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_SERVER_URI}/api/create-stripe-link`,
+        { sellerId }
+      );
+
+      if (response.data.url) {
+        window.location.href = response.data.url;
+      }
+    } catch (error) {
+      console.log("Stripe Connection Error: ", error);
     }
   };
 
@@ -138,7 +154,7 @@ const RegisterPage = () => {
             {!showOtp ? (
               <form onSubmit={handleSubmit(onSubmit)}>
                 <h3 className="text-2xl font-semibold text-center mb-4">
-                  Create Account
+                  Create Seller Account
                 </h3>
                 {/** Name */}
                 <label className="block mb-1 text-gray-700">Name</label>
@@ -211,7 +227,7 @@ const RegisterPage = () => {
                 {/** Country */}
                 <label className="block mb-1 text-gray-700">Country</label>
                 <select
-                  className="w-full p-2 border border0-gray-300 outline-none rounded-[4px] mb-1"
+                  className="w-full p-2 border border-gray-300 outline-none rounded-[4px] mb-1"
                   {...register("country", { required: "Country is required" })}
                 >
                   <option value="">Select your country</option>
@@ -332,6 +348,21 @@ const RegisterPage = () => {
               </div>
             )}
           </>
+        )}
+        {activeStep === 2 && (
+          <CreateShop sellerId={sellerId} setActiveStep={setActiveStep} />
+        )}
+        {activeStep === 3 && (
+          <div className="text-center">
+            <h3 className="text-2xl font-semibold">Withdraw Method</h3>
+            <br />
+            <button
+              onClick={connectStripe}
+              className="w-full m-auto flex items-center justify-center gap-3 text-lg bg-black text-white py-2 rounded-lg"
+            >
+              <StripeLogo />
+            </button>
+          </div>
         )}
       </div>
     </div>
